@@ -9,6 +9,7 @@ import org.apache.accumulo.core.security.Authorizations;
 import org.apache.commons.collections4.iterators.TransformIterator;
 import org.apache.log4j.Logger;
 
+import datawave.microservice.querymetric.BaseQueryMetric;
 import datawave.security.authorization.UserOperations;
 import datawave.webservice.query.Query;
 import datawave.webservice.query.configuration.GenericQueryConfiguration;
@@ -25,6 +26,8 @@ public class FilteredQueryLogic extends DelegatingQueryLogic implements QueryLog
 
     private QueryLogicFilter filter;
 
+    private BaseQueryMetric metric;
+
     private boolean filtered = false;
 
     public FilteredQueryLogic() {}
@@ -33,6 +36,7 @@ public class FilteredQueryLogic extends DelegatingQueryLogic implements QueryLog
         super(other);
         this.filter = other.filter;
         this.filtered = other.filtered;
+        this.metric = other.metric;
     }
 
     public QueryLogicFilter getFilter() {
@@ -119,6 +123,11 @@ public class FilteredQueryLogic extends DelegatingQueryLogic implements QueryLog
     @Override
     public Object clone() throws CloneNotSupportedException {
         return new FilteredQueryLogic(this);
+    }
+
+    @Override
+    public void setQueryMetric(BaseQueryMetric metric) {
+        this.metric = metric;
     }
 
     @Override

@@ -4,7 +4,6 @@ import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -33,7 +32,6 @@ import datawave.security.authorization.UserOperations;
 import datawave.security.util.WSAuthorizationsUtil;
 import datawave.webservice.common.connection.AccumuloConnectionFactory;
 import datawave.webservice.query.Query;
-import datawave.webservice.query.QueryImpl;
 import datawave.webservice.query.cache.AbstractRunningQuery;
 import datawave.webservice.query.cache.ResultsPage;
 import datawave.webservice.query.configuration.GenericQueryConfiguration;
@@ -117,6 +115,7 @@ public class RunningQuery extends AbstractRunningQuery implements Runnable {
         super(metricFactory);
         if (logic != null && logic.getCollectQueryMetrics()) {
             this.queryMetrics = queryMetrics;
+            logic.setQueryMetric(getMetric());
         }
         this.getMetric().setLifecycle(QueryMetric.Lifecycle.DEFINED);
         this.logic = logic;

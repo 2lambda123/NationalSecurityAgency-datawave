@@ -12,12 +12,12 @@ import org.apache.commons.collections4.iterators.TransformIterator;
 
 import datawave.audit.SelectorExtractor;
 import datawave.marking.MarkingFunctions;
+import datawave.microservice.querymetric.BaseQueryMetric;
 import datawave.security.authorization.UserOperations;
 import datawave.validation.ParameterValidator;
 import datawave.webservice.common.audit.Auditor.AuditType;
 import datawave.webservice.common.connection.AccumuloConnectionFactory;
 import datawave.webservice.query.Query;
-import datawave.webservice.query.QueryImpl;
 import datawave.webservice.query.cache.ResultsPage;
 import datawave.webservice.query.configuration.GenericQueryConfiguration;
 import datawave.webservice.query.exception.DatawaveErrorCode;
@@ -216,6 +216,14 @@ public interface QueryLogic<T> extends Iterable<T>, Cloneable, ParameterValidato
      *            base iterator priority
      */
     void setBaseIteratorPriority(final int priority);
+
+    /**
+     * Sets the query metric
+     *
+     * @param metric
+     *            query metric
+     */
+    void setQueryMetric(BaseQueryMetric metric);
 
     /**
      * @param logicName

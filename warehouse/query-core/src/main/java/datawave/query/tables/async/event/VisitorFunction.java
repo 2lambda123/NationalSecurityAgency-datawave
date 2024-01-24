@@ -21,6 +21,7 @@ import javax.annotation.Nullable;
 
 import org.apache.accumulo.core.client.IteratorSetting;
 import org.apache.accumulo.core.client.TableNotFoundException;
+import org.apache.accumulo.core.data.Key;
 import org.apache.accumulo.core.data.Range;
 import org.apache.commons.jexl2.parser.ASTJexlScript;
 import org.apache.commons.jexl2.parser.ParseException;
@@ -33,6 +34,8 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 import datawave.core.iterators.filesystem.FileSystemCache;
+import datawave.microservice.querymetric.BaseQueryMetric;
+import datawave.microservice.querymetric.RangeCounts;
 import datawave.query.config.ShardQueryConfiguration;
 import datawave.query.exceptions.DatawaveFatalQueryException;
 import datawave.query.exceptions.InvalidQueryException;
@@ -51,7 +54,6 @@ import datawave.query.jexl.visitors.TermCountingVisitor;
 import datawave.query.jexl.visitors.TreeEqualityVisitor;
 import datawave.query.jexl.visitors.whindex.WhindexVisitor;
 import datawave.query.planner.DefaultQueryPlanner;
-import datawave.query.postprocessing.tf.TermOffsetPopulator;
 import datawave.query.tables.SessionOptions;
 import datawave.query.tables.async.ScannerChunk;
 import datawave.query.util.MetadataHelper;
@@ -73,7 +75,10 @@ public class VisitorFunction implements Function<ScannerChunk,ScannerChunk> {
 
     protected static FileSystemCache fileSystemCache = null;
 
+    private int shardRangeCount = 0;
+    private int documentRangeCount = 0;
     private ShardQueryConfiguration config;
+    private BaseQueryMetric metric;
     protected MetadataHelper metadataHelper;
     protected Set<String> indexedFields;
     protected Set<String> indexOnlyFields;
@@ -85,8 +90,9 @@ public class VisitorFunction implements Function<ScannerChunk,ScannerChunk> {
 
     private static final Logger log = Logger.getLogger(VisitorFunction.class);
 
-    public VisitorFunction(ShardQueryConfiguration config, MetadataHelper metadataHelper) throws MalformedURLException {
+    public VisitorFunction(ShardQueryConfiguration config, MetadataHelper metadataHelper, BaseQueryMetric metric) throws MalformedURLException {
         this.config = config;
+        this.metric = metric;
 
         if (VisitorFunction.fileSystemCache == null && this.config.getHdfsSiteConfigURLs() != null) {
             VisitorFunction.fileSystemCache = new FileSystemCache(this.config.getHdfsSiteConfigURLs());
@@ -145,9 +151,21 @@ public class VisitorFunction implements Function<ScannerChunk,ScannerChunk> {
         return minDate;
     }
 
+    public void updateRangeCounts(Range range) {
+        Key key = range.getStartKey();
+        String cf = key.getColumnFamily().toString();
+        if (cf.length() > 0) {
+            documentRangeCount++;
+        } else {
+            shardRangeCount++;
+        }
+    }
+
     @Override
     @Nullable
     public ScannerChunk apply(@Nullable ScannerChunk input) {
+        shardRangeCount = 0;
+        documentRangeCount = 0;
 
         SessionOptions options = input.getOptions();
 
@@ -339,6 +357,15 @@ public class VisitorFunction implements Function<ScannerChunk,ScannerChunk> {
                     } else if (log.isDebugEnabled()) {
                         DefaultQueryPlanner.logDebug(PrintingVisitor.formattedQueryStringList(script, DefaultQueryPlanner.maxChildNodesToPrint),
                                         "VistorFunction::apply method");
+                    }
+                    for (Range range : newSettings.getRanges()) {
+                        updateRangeCounts(range);
+                    }
+                    if (metric != null) {
+                        RangeCounts ranges = new RangeCounts();
+                        ranges.setDocumentRangeCount(documentRangeCount);
+                        ranges.setShardRangeCount(shardRangeCount);
+                        metric.addSubPlan(newQuery, ranges);
                     }
 
                 } catch (ParseException e) {

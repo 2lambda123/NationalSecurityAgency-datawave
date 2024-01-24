@@ -22,6 +22,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import datawave.microservice.querymetric.BaseQueryMetric;
+import datawave.microservice.querymetric.RangeCounts;
 import datawave.query.config.ShardQueryConfiguration;
 import datawave.query.exceptions.DatawaveFatalQueryException;
 import datawave.query.iterator.QueryIterator;
@@ -39,11 +41,13 @@ public class VisitorFunctionTest extends EasyMockSupport {
 
     private ShardQueryConfiguration config;
     private MetadataHelper helper;
+    private BaseQueryMetric metric;
 
     @Before
     public void setup() {
         config = new ShardQueryConfiguration();
         helper = createMock(MetadataHelper.class);
+        metric = createMock(BaseQueryMetric.class);
     }
 
     private void setupExpects() throws TableNotFoundException, IOException, URISyntaxException {
@@ -88,6 +92,10 @@ public class VisitorFunctionTest extends EasyMockSupport {
         Query mockQuery = createMock(Query.class);
         config.setQuery(mockQuery);
         EasyMock.expect(mockQuery.getId()).andReturn(new UUID(0, 0)).anyTimes();
+        RangeCounts ranges = new RangeCounts();
+        ranges.setShardRangeCount(1);
+        ranges.setDocumentRangeCount(1);
+        metric.addSubPlan(EasyMock.eq("20210101_0"), EasyMock.eq(ranges));
 
         // set thresholds
         config.setFinalMaxTermThreshold(2);
@@ -102,7 +110,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
 
         replayAll();
 
-        function = new VisitorFunction(config, helper);
+        function = new VisitorFunction(config, helper, metric);
         function.apply(chunk);
 
         verifyAll();
@@ -120,6 +128,10 @@ public class VisitorFunctionTest extends EasyMockSupport {
         config.setQuery(mockQuery);
         EasyMock.expect(mockQuery.getId()).andReturn(new UUID(0, 0)).anyTimes();
         EasyMock.expect(mockQuery.duplicate("testQuery1")).andReturn(mockQuery).anyTimes();
+        RangeCounts ranges = new RangeCounts();
+        ranges.setShardRangeCount(1);
+        ranges.setDocumentRangeCount(1);
+        metric.addSubPlan(EasyMock.eq("20210101_0"), EasyMock.eq(ranges));
 
         // set thresholds
         config.setFinalMaxTermThreshold(1);
@@ -140,7 +152,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
 
         replayAll();
 
-        function = new VisitorFunction(config, helper);
+        function = new VisitorFunction(config, helper, metric);
         ScannerChunk updatedChunk = function.apply(chunk);
 
         verifyAll();
@@ -186,7 +198,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
 
         replayAll();
 
-        function = new VisitorFunction(config, helper);
+        function = new VisitorFunction(config, helper, metric);
         ScannerChunk updatedChunk = function.apply(chunk);
 
         verifyAll();
@@ -212,6 +224,10 @@ public class VisitorFunctionTest extends EasyMockSupport {
         EasyMock.expect(mockQuery.getId()).andReturn(new UUID(0, 0)).anyTimes();
         EasyMock.expect(mockQuery.getQueryName()).andReturn("testQuery1").anyTimes();
         EasyMock.expect(mockQuery.duplicate("testQuery1")).andReturn(mockQuery).anyTimes();
+        RangeCounts ranges = new RangeCounts();
+        ranges.setShardRangeCount(1);
+        ranges.setDocumentRangeCount(1);
+        metric.addSubPlan(EasyMock.eq("20210101_0"), EasyMock.eq(ranges));
 
         // set thresholds
         config.setFinalMaxTermThreshold(5);
@@ -232,7 +248,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
 
         replayAll();
 
-        function = new VisitorFunction(config, helper);
+        function = new VisitorFunction(config, helper, metric);
         ScannerChunk updatedChunk = function.apply(chunk);
 
         verifyAll();
@@ -259,6 +275,10 @@ public class VisitorFunctionTest extends EasyMockSupport {
         config.setQuery(mockQuery);
         EasyMock.expect(mockQuery.getId()).andReturn(new UUID(0, 0)).anyTimes();
         EasyMock.expect(mockQuery.duplicate("testQuery1")).andReturn(mockQuery).anyTimes();
+        RangeCounts ranges = new RangeCounts();
+        ranges.setShardRangeCount(1);
+        ranges.setDocumentRangeCount(1);
+        metric.addSubPlan(EasyMock.eq("20210101_0"), EasyMock.eq(ranges));
 
         // set thresholds
         config.setFinalMaxTermThreshold(1);
@@ -279,7 +299,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
 
         replayAll();
 
-        function = new VisitorFunction(config, helper);
+        function = new VisitorFunction(config, helper, metric);
         ScannerChunk updatedChunk = function.apply(chunk);
 
         verifyAll();
@@ -296,7 +316,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
     public void testPruneIvaratorConfigs() throws Exception {
         ShardQueryConfiguration config = new ShardQueryConfiguration();
         MetadataHelper helper = new MockMetadataHelper();
-        VisitorFunction function = new VisitorFunction(config, helper);
+        VisitorFunction function = new VisitorFunction(config, helper, metric);
 
         // this query does NOT require an Ivarator
         String query = "FOO == 'bar'";
@@ -323,7 +343,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
     public void testIvaratorConfigNotPruned() throws Exception {
         ShardQueryConfiguration config = new ShardQueryConfiguration();
         MetadataHelper helper = new MockMetadataHelper();
-        VisitorFunction function = new VisitorFunction(config, helper);
+        VisitorFunction function = new VisitorFunction(config, helper, metric);
 
         // this query DOES require an Ivarator
         String query = "((_Value_ = true) && (FOO == 'bar'))";
@@ -345,7 +365,7 @@ public class VisitorFunctionTest extends EasyMockSupport {
     public void testPruneEmptyIteratorOptions() throws Exception {
         ShardQueryConfiguration cfg = new ShardQueryConfiguration();
         MetadataHelper hlpr = new MockMetadataHelper();
-        VisitorFunction function = new VisitorFunction(cfg, hlpr);
+        VisitorFunction function = new VisitorFunction(cfg, hlpr, metric);
 
         IteratorSetting settings = new IteratorSetting(10, "itr", QueryIterator.class);
         settings.addOption(QueryOptions.QUERY, "FOO == 'bar'");
