@@ -212,6 +212,7 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
                 for (String line : StringUtils.split(queryStream.getContextDebug(), '\n')) {
                     log.debug(line);
                     if (maxLinesToPrint > 0 && ++count > maxLinesToPrint) {
+                        log.warn("query exceeded max lines to print: " + maxLinesToPrint);
                         break;
                     }
                 }
@@ -261,6 +262,7 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
                     for (String line : StringUtils.split(queryStream.getContextDebug(), '\n')) {
                         log.debug(line);
                         if (maxLinesToPrint > 0 && ++count > maxLinesToPrint) {
+                            log.warn("query exceeded max lines to print: " + maxLinesToPrint);
                             break;
                         }
                     }
@@ -512,6 +514,8 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
                 if (this.getAllFieldsFromHelper().contains(fieldName)) {
                     if (maxLinesToPrint > 0 && linesPrinted > maxLinesToPrint) {
                         log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
+                    } else {
+                        log.trace("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
                     }
                     return ScannerStream.unindexed(node);
                 }
@@ -521,6 +525,8 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
             }
             if (maxLinesToPrint > 0 && linesPrinted > maxLinesToPrint) {
                 log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
+            } else {
+                log.trace("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
             }
             return ScannerStream.unknownField(node);
         }
@@ -528,6 +534,8 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
         // Final case, field is indexed
         if (maxLinesToPrint > 0 && linesPrinted > maxLinesToPrint) {
             log.debug("\"" + fieldName + "\" is indexed. for " + literal);
+        } else {
+            log.trace("\"" + fieldName + "\" is indexed. for " + literal);
         }
 
         try {
