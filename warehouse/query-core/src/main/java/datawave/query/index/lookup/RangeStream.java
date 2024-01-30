@@ -512,7 +512,7 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
         if (!isIndexed(fieldName, config.getIndexedFields())) {
             try {
                 if (this.getAllFieldsFromHelper().contains(fieldName)) {
-                    if (maxLinesToPrint > 0 && linesPrinted > maxLinesToPrint) {
+                    if (maxLinesToPrint > 0 && linesPrinted < maxLinesToPrint) {
                         log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
                     } else {
                         log.trace("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
@@ -523,7 +523,7 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
                 log.error(e);
                 throw new RuntimeException(e);
             }
-            if (maxLinesToPrint > 0 && linesPrinted > maxLinesToPrint) {
+            if (maxLinesToPrint > 0 && linesPrinted < maxLinesToPrint) {
                 log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
             } else {
                 log.trace("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
@@ -532,7 +532,7 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
         }
 
         // Final case, field is indexed
-        if (maxLinesToPrint > 0 && linesPrinted > maxLinesToPrint) {
+        if (maxLinesToPrint > 0 && linesPrinted < maxLinesToPrint) {
             log.debug("\"" + fieldName + "\" is indexed. for " + literal);
         } else {
             log.trace("\"" + fieldName + "\" is indexed. for " + literal);
