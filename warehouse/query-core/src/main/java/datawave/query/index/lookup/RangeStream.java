@@ -142,6 +142,9 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
 
     protected Set<String> indexOnlyFields = Sets.newHashSet();
 
+    private int maxLinesToPrint = -1;
+    private int linesPrinted = 0;
+
     public RangeStream(ShardQueryConfiguration config, ScannerFactory scanners, MetadataHelper metadataHelper) {
         this.config = config;
         this.scanners = scanners;
@@ -205,8 +208,13 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
         if (log.isDebugEnabled()) {
             log.debug("Query returned a stream with a context of " + this.context);
             if (queryStream != null) {
+                int count = 0;
                 for (String line : StringUtils.split(queryStream.getContextDebug(), '\n')) {
                     log.debug(line);
+                    if (maxLinesToPrint > 0 && ++count > maxLinesToPrint) {
+                        log.warn("query exceeded max lines to print: " + maxLinesToPrint);
+                        break;
+                    }
                 }
             }
         }
@@ -250,8 +258,13 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
 
                 if (log.isDebugEnabled()) {
                     log.debug("Query returned a stream with a context of " + this.context);
+                    int count = 0;
                     for (String line : StringUtils.split(queryStream.getContextDebug(), '\n')) {
                         log.debug(line);
+                        if (maxLinesToPrint > 0 && ++count > maxLinesToPrint) {
+                            log.warn("query exceeded max lines to print: " + maxLinesToPrint);
+                            break;
+                        }
                     }
                 }
 
@@ -274,6 +287,26 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
         }
 
         return new EmptyPlanPruner();
+    }
+
+    /**
+     * Get the maximum number of lines to print. Useful when debug logging is enabled for very large queries. This property is disabled when set to -1 or 0.
+     *
+     * @return the maximum number of lines to print
+     */
+    public int getMaxLinesToPrint() {
+        return maxLinesToPrint;
+    }
+
+    /**
+     * Set the maximum number of lines to print. Number must be a positive integer to have an effect.
+     *
+     * @param maxLinesToPrint
+     *            the maximum number of lines to print
+     */
+    public RangeStream setMaxLinesToPrint(int maxLinesToPrint) {
+        this.maxLinesToPrint = maxLinesToPrint;
+        return this;
     }
 
     /**
@@ -515,22 +548,36 @@ public class RangeStream extends BaseVisitor implements CloseableIterable<QueryP
         }
 
         // Check if field is not indexed
+        linesPrinted++;
         if (!isIndexed(fieldName, config.getIndexedFields())) {
             try {
                 if (this.getAllFieldsFromHelper().contains(fieldName)) {
-                    log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
+                    if (maxLinesToPrint > 0 && linesPrinted < maxLinesToPrint) {
+                        log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
+                    } else {
+                        log.trace("{\"" + fieldName + "\": \"" + literal + "\"} is not indexed.");
+                    }
                     return ScannerStream.unindexed(node);
                 }
             } catch (TableNotFoundException e) {
                 log.error(e);
                 throw new RuntimeException(e);
             }
-            log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
+            if (maxLinesToPrint > 0 && linesPrinted < maxLinesToPrint) {
+                log.debug("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
+            } else {
+                log.trace("{\"" + fieldName + "\": \"" + literal + "\"} is not an observed field.");
+            }
             return ScannerStream.unknownField(node);
         }
 
         // Final case, field is indexed
-        log.debug("\"" + fieldName + "\" is indexed. for " + literal);
+        if (maxLinesToPrint > 0 && linesPrinted < maxLinesToPrint) {
+            log.debug("\"" + fieldName + "\" is indexed. for " + literal);
+        } else {
+            log.trace("\"" + fieldName + "\" is indexed. for " + literal);
+        }
+
         try {
 
             int stackStart = config.getBaseIteratorPriority();

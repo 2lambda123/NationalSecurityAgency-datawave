@@ -542,6 +542,8 @@ public class ShardQueryConfigurationTest {
 
         defaultValues.put("groupFields", new GroupFields());
         updatedValues.put("groupFields", GroupFields.from("GROUP(FIELD_G,FIELD_H)"));
+        defaultValues.put("maxLinesToPrint", -1);
+        updatedValues.put("maxLinesToPrint", 150);
     }
 
     private Query createQuery(String query) {
