@@ -100,6 +100,8 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
     private int collapseUidsThreshold = -1;
     // Should this query dedupe terms within ANDs and ORs
     private boolean enforceUniqueTermsWithinExpressions = false;
+    private boolean reduceIngestTypes = false;
+    private boolean reduceIngestTypesPerShard = false;
     // should this query attempt to prune terms via their ingest types
     private boolean pruneQueryByIngestTypes = false;
     // should this query reduce the set of fields prior to serialization
@@ -223,6 +225,8 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
     private Set<String> datatypeFilter = UniversalSet.instance();
     // A set of sorted index holes
     private List<IndexHole> indexHoles = new ArrayList<>();
+    // a set of user specified mappings
+    private Set<String> renameFields = new HashSet<>(0);
     // Limit fields returned per event
     private Set<String> projectFields = Collections.emptySet();
     private Set<String> disallowlistedFields = new HashSet<>(0);
@@ -457,6 +461,26 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
     private boolean pruneQueryOptions = false;
 
     /**
+     * Flag to control gathering field counts from the global index and persisting those to the query iterator. Negated terms and branches are not considered.
+     */
+    private boolean useFieldCounts = false;
+    /**
+     * Flag to control gathering term counts from the global index and persisting those to the query iterator. Negated terms and branches are not considered.
+     */
+    private boolean useTermCounts = false;
+    /**
+     * Flag to control sorting a query by inferred default costs prior to the global index lookup. This step may reduce time performing a secondary sort as when
+     * {@link #sortQueryByCounts} is enabled.
+     */
+    private boolean sortQueryBeforeGlobalIndex = false;
+
+    /**
+     * Flag to control if a query is sorted by either field or term counts. Either {@link #useFieldCounts} or {@link #useTermCounts} must be set for this option
+     * to take effect.
+     */
+    private boolean sortQueryByCounts = false;
+
+    /**
      * Default constructor
      */
     public ShardQueryConfiguration() {
@@ -486,6 +510,8 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
         this.setCollapseUids(other.getCollapseUids());
         this.setCollapseUidsThreshold(other.getCollapseUidsThreshold());
         this.setEnforceUniqueTermsWithinExpressions(other.getEnforceUniqueTermsWithinExpressions());
+        this.setReduceIngestTypes(other.getReduceIngestTypes());
+        this.setReduceIngestTypesPerShard(other.getReduceIngestTypesPerShard());
         this.setPruneQueryByIngestTypes(other.getPruneQueryByIngestTypes());
         this.setReduceQueryFields(other.getReduceQueryFields());
         this.setReduceQueryFieldsPerShard(other.getReduceQueryFieldsPerShard());
@@ -547,6 +573,7 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
         this.setDatatypeFilter(null == other.getDatatypeFilter() ? null : Sets.newHashSet(other.getDatatypeFilter()));
         this.setIndexHoles(null == other.getIndexHoles() ? null : Lists.newArrayList(other.getIndexHoles()));
         this.setProjectFields(null == other.getProjectFields() ? null : Sets.newHashSet(other.getProjectFields()));
+        this.setRenameFields(null == other.getRenameFields() ? null : Sets.newHashSet(other.getRenameFields()));
         this.setDisallowlistedFields(null == other.getDisallowlistedFields() ? null : Sets.newHashSet(other.getDisallowlistedFields()));
         this.setIndexedFields(null == other.getIndexedFields() ? null : Sets.newHashSet(other.getIndexedFields()));
         this.setReverseIndexedFields(null == other.getReverseIndexedFields() ? null : Sets.newHashSet(other.getReverseIndexedFields()));
@@ -668,6 +695,10 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
         this.setTfAggregationThresholdMs(other.getTfAggregationThresholdMs());
         this.setGroupFields(GroupFields.copyOf(other.getGroupFields()));
         this.setPruneQueryOptions(other.getPruneQueryOptions());
+        this.setUseFieldCounts(other.getUseFieldCounts());
+        this.setUseTermCounts(other.getUseTermCounts());
+        this.setSortQueryBeforeGlobalIndex(other.isSortQueryBeforeGlobalIndex());
+        this.setSortQueryByCounts(other.isSortQueryByCounts());
     }
 
     /**
@@ -910,6 +941,14 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
     @JsonIgnore
     public String getProjectFieldsAsString() {
         return StringUtils.join(this.getProjectFields(), Constants.PARAM_VALUE_SEP);
+    }
+
+    public Set<String> getRenameFields() {
+        return renameFields;
+    }
+
+    public void setRenameFields(Set<String> renameFields) {
+        this.renameFields = renameFields;
     }
 
     public Set<String> getDisallowlistedFields() {
@@ -2578,5 +2617,53 @@ public class ShardQueryConfiguration extends GenericQueryConfiguration implement
 
     public void setPruneQueryOptions(boolean pruneQueryOptions) {
         this.pruneQueryOptions = pruneQueryOptions;
+    }
+
+    public boolean getReduceIngestTypes() {
+        return reduceIngestTypes;
+    }
+
+    public void setReduceIngestTypes(boolean reduceIngestTypes) {
+        this.reduceIngestTypes = reduceIngestTypes;
+    }
+
+    public boolean getReduceIngestTypesPerShard() {
+        return reduceIngestTypesPerShard;
+    }
+
+    public void setReduceIngestTypesPerShard(boolean reduceIngestTypesPerShard) {
+        this.reduceIngestTypesPerShard = reduceIngestTypesPerShard;
+    }
+
+    public boolean getUseTermCounts() {
+        return useTermCounts;
+    }
+
+    public void setUseTermCounts(boolean useTermCounts) {
+        this.useTermCounts = useTermCounts;
+    }
+
+    public boolean getUseFieldCounts() {
+        return useFieldCounts;
+    }
+
+    public void setUseFieldCounts(boolean useFieldCounts) {
+        this.useFieldCounts = useFieldCounts;
+    }
+
+    public boolean isSortQueryBeforeGlobalIndex() {
+        return sortQueryBeforeGlobalIndex;
+    }
+
+    public void setSortQueryBeforeGlobalIndex(boolean sortQueryBeforeGlobalIndex) {
+        this.sortQueryBeforeGlobalIndex = sortQueryBeforeGlobalIndex;
+    }
+
+    public boolean isSortQueryByCounts() {
+        return sortQueryByCounts;
+    }
+
+    public void setSortQueryByCounts(boolean sortQueryByCounts) {
+        this.sortQueryByCounts = sortQueryByCounts;
     }
 }

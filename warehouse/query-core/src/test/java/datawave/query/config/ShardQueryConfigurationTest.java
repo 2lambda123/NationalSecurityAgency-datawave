@@ -454,6 +454,10 @@ public class ShardQueryConfigurationTest {
         updatedValues.put("tfAggregationThresholdMs", 10000);
         defaultValues.put("pruneQueryOptions", false);
         updatedValues.put("pruneQueryOptions", true);
+        defaultValues.put("reduceIngestTypes", false);
+        updatedValues.put("reduceIngestTypes", true);
+        defaultValues.put("reduceIngestTypesPerShard", false);
+        updatedValues.put("reduceIngestTypesPerShard", true);
         defaultValues.put("pruneQueryByIngestTypes", false);
         updatedValues.put("pruneQueryByIngestTypes", true);
         defaultValues.put("numIndexLookupThreads", 8);
@@ -502,6 +506,9 @@ public class ShardQueryConfigurationTest {
         updatedValues.put("projectFieldsAsString", "FIELD_P,FIELD_Q");
         alreadySet.add("projectFieldsAsString");
 
+        defaultValues.put("renameFields", Sets.newHashSet());
+        updatedValues.put("renameFields", Collections.singleton("UUID=ID"));
+
         defaultValues.put("disallowlistedFields", Sets.newHashSet());
         updatedValues.put("disallowlistedFields", Sets.newHashSet("FIELD_B", "FIELD_C"));
         defaultValues.put("disallowlistedFieldsAsString", "");
@@ -542,6 +549,15 @@ public class ShardQueryConfigurationTest {
 
         defaultValues.put("groupFields", new GroupFields());
         updatedValues.put("groupFields", GroupFields.from("GROUP(FIELD_G,FIELD_H)"));
+
+        defaultValues.put("useFieldCounts", false);
+        updatedValues.put("useFieldCounts", true);
+        defaultValues.put("useTermCounts", false);
+        updatedValues.put("useTermCounts", true);
+        defaultValues.put("sortQueryBeforeGlobalIndex", false);
+        updatedValues.put("sortQueryBeforeGlobalIndex", true);
+        defaultValues.put("sortQueryByCounts", false);
+        updatedValues.put("sortQueryByCounts", true);
     }
 
     private Query createQuery(String query) {
