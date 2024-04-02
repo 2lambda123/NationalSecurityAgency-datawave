@@ -1,17 +1,21 @@
 package datawave.ingest.mapreduce.job;
 
 import static org.apache.accumulo.core.conf.Property.TABLE_CRYPTO_PREFIX;
+import static datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.BULK_IMPORT_MODE_CONFIG;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import com.google.gson.GsonBuilder;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.conf.AccumuloConfiguration;
 import org.apache.accumulo.core.conf.ConfigurationCopy;
@@ -20,6 +24,7 @@ import org.apache.accumulo.core.crypto.CryptoFactoryLoader;
 import org.apache.accumulo.core.data.ArrayByteSequence;
 import org.apache.accumulo.core.data.ByteSequence;
 import org.apache.accumulo.core.data.Key;
+import org.apache.accumulo.core.data.LoadPlan;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.file.FileOperations;
 import org.apache.accumulo.core.file.FileSKVIterator;
@@ -30,6 +35,7 @@ import org.apache.accumulo.core.spi.crypto.CryptoService;
 import org.apache.accumulo.core.spi.file.rfile.compression.NoCompression;
 import org.apache.commons.lang.mutable.MutableInt;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -46,9 +52,11 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
+import com.google.gson.Gson;
 
 import datawave.ingest.data.config.ingest.AccumuloHelper;
 import datawave.ingest.mapreduce.handler.shard.ShardedDataTypeHandler;
+import datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.ImportMode;
 import datawave.marking.MarkingFunctions;
 import datawave.util.StringUtils;
 
@@ -56,7 +64,13 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
 
     private static final Logger log = Logger.getLogger(MultiRFileOutputFormatter.class);
 
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeHierarchyAdapter(byte[].class, new BulkIngestMapFileLoader.ByteArrayToBase64TypeAdapter()).create();
+    
+    protected static TableSplitsCache splitsCache = null;
+
     protected Map<String,SizeTrackingWriter> writers = null;
+    protected Map<String,Set<LoadPlan>> tableLoadPlans = new HashMap<>();
     protected Map<String,Path> unusedWriterPaths = null;
     protected Map<String,Path> usedWriterPaths = null;
     protected Map<String,String> writerTableNames = null;
@@ -174,6 +188,17 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
         Iterable<String> splits = Splitter.on(",").split(locs);
         conf.set(CONFIGURE_LOCALITY_GROUPS, Joiner.on(",").join(splits, tableName));
     }
+    
+    public static boolean loadPlanningEnabled(Configuration conf) {
+        return conf.getEnum(BULK_IMPORT_MODE_CONFIG, ImportMode.V1).equals(ImportMode.V2_LOAD_PLANNING);
+    }
+    
+    protected static TableSplitsCache getSplitsCache(Configuration conf) {
+        if (splitsCache == null) {
+            splitsCache = new TableSplitsCache(conf);
+        }
+        return splitsCache;
+    }
 
     /**
      * Insert a count into the filename. The filename is expected to end with our extension.
@@ -272,6 +297,9 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
             Path filename = usedWriterPaths.get(key);
             // don't bother if this writer has not been used yet
             if (filename != null) {
+                if (loadPlanningEnabled(conf)) {
+                    addLoadPlanForFile(writer, table, filename);
+                }
                 writer.close();
                 // pull the index off the filename
                 filename = removeFileCount(filename);
@@ -280,10 +308,62 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
         }
     }
 
+    private void addLoadPlanForFile(SizeTrackingWriter writer, String table, Path filepath) throws IOException {
+        TableSplitsCache cache = getSplitsCache(conf);
+        
+        if (writer != null && writer.entries > 0) {
+            Text startRow = writer.startRow;
+            Text endRow = writer.endRow;
+            if (!tableLoadPlans.containsKey(table)) {
+                tableLoadPlans.put(table, new HashSet<>());
+            }
+
+            int startPos = -1;
+            int endPos = -1;
+            
+            List<Text> tableSplits = cache.getSplits(table);
+            if (!tableSplits.isEmpty()) {
+                startPos = Collections.binarySearch(tableSplits, startRow);
+                endPos = Collections.binarySearch(tableSplits, endRow);
+            }
+            
+            LoadPlan.RangeType rangeType = LoadPlan.RangeType.FILE;
+            if (startPos >= 0 && endPos >= 0 && startPos < endPos) {
+                log.error(String.format("Got RangeType.TABLE for file [%s], table [%s], thread [%s : %s]", filepath.getName(), table, Thread.currentThread().getName(), Thread.currentThread().getId()));
+                rangeType = LoadPlan.RangeType.TABLE;
+            }
+            
+            log.error(String.format("Creating load plan for table:[%s], filepath:[%s], startRow:[%s], endRow:[%s], workDir:[%s], rangeType:[%s], thread [%s : %s]", table, filepath,
+                startRow, endRow, workDir, rangeType.name(), Thread.currentThread().getName(), Thread.currentThread().getId()));
+            
+            tableLoadPlans.get(table).add(
+                LoadPlan.builder().loadFileTo(filepath.getName(), rangeType, startRow, endRow).build()
+            );
+        }
+    }
+
+    private void writeLoadPlans(TaskAttemptContext context) throws IOException {
+        // Consolidate plans for each table into a single file
+        for (Map.Entry<String,Set<LoadPlan>> entry : tableLoadPlans.entrySet()) {
+            var builder = LoadPlan.builder();
+            var table = entry.getKey();
+            var path = new Path(String.format("%s/%s", workDir, table), getUniqueFile(context, "loadplan", ".json"));
+            log.error(String.format("Writing load plan for table:[%s], filepath:[%s], thread [%s - %s]", table, path,
+                    Thread.currentThread().getName(), Thread.currentThread().getId()));
+            entry.getValue().stream().forEach(plan -> builder.addPlan(plan));
+            var loadPlan = builder.build();
+            try (FSDataOutputStream out = fs.create(path)) {
+                out.write(gson.toJson(loadPlan).getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    }
+
     public static class SizeTrackingWriter implements FileSKVWriter {
         private FileSKVWriter delegate;
         long size = 0;
         int entries = 0;
+        Text startRow;
+        Text endRow;
 
         public long getSize() {
             return size;
@@ -306,6 +386,10 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
         }
 
         public void append(Key key, Value value) throws IOException {
+            if (entries == 0) {
+                startRow = key.getRow();
+            }
+            endRow = key.getRow();
             entries++;
             size += key.getLength() + (value == null ? 0 : value.getSize());
             delegate.append(key, value);
@@ -560,10 +644,23 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
 
             @Override
             public void close(TaskAttemptContext context) throws IOException, InterruptedException {
-                // Close all of the Map File Writers
-                for (SizeTrackingWriter writer : writers.values()) {
+                boolean loadPlanning = loadPlanningEnabled(conf);
+                
+                // Close each writer. Add its associated load plan prior to doing so
+                for (Map.Entry<String,SizeTrackingWriter> entry : writers.entrySet()) {
+                    var writer = entry.getValue();
+                    if (loadPlanning) {
+                        var table = writerTableNames.get(entry.getKey());
+                        var file = usedWriterPaths.get(entry.getKey());
+                        addLoadPlanForFile(writer, table, file);
+                    }
                     writer.close();
                 }
+
+                if (loadPlanning) {
+                    writeLoadPlans(context);
+                }
+
                 // To verify the file was actually written successfully, we need to reopen it which will reread
                 // the index at the end and verify its integrity.
                 FileOperations fops = FileOperations.getInstance();
@@ -585,6 +682,7 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
                         throw new IOException(ex);
                     }
                 }
+
                 for (Path path : unusedWriterPaths.values()) {
                     log.info("Nothing written to " + path + ".  Deleting from HDFS.");
                     fs.delete(path, true);

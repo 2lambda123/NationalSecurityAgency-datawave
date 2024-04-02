@@ -3,6 +3,7 @@ package datawave.ingest.mapreduce.job;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -40,7 +41,11 @@ import org.junit.Test;
 import org.powermock.api.easymock.PowerMock;
 
 import datawave.ingest.data.config.ingest.AccumuloHelper;
+import datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.ImportMode;
 import datawave.util.TableName;
+
+import static datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.BULK_IMPORT_MODE_CONFIG;
+import static datawave.ingest.mapreduce.job.TableSplitsCache.SPLITS_CACHE_DIR;
 
 public class MultiRFileOutputFormatterTest {
 
@@ -140,7 +145,6 @@ public class MultiRFileOutputFormatterTest {
 
         MultiRFileOutputFormatterTest.logger.setLevel(testDriverLevel);
         Logger.getLogger(MultiRFileOutputFormatter.class).setLevel(uutLevel);
-
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -433,6 +437,9 @@ public class MultiRFileOutputFormatterTest {
         conf = new Configuration();
         conf.set("mapred.output.dir", "/tmp");
         conf.set(MultiRFileOutputFormatter.CONFIGURED_TABLE_NAMES, TableName.SHARD + ',' + TableName.SHARD_INDEX);
+        conf.setEnum(BULK_IMPORT_MODE_CONFIG, ImportMode.V2_LOAD_PLANNING);
+        URL url = TableSplitsCacheTest.class.getResource("/datawave/ingest/mapreduce/job/all-splits.txt");
+        conf.set(SPLITS_CACHE_DIR, url.getPath().substring(0, url.getPath().lastIndexOf(Path.SEPARATOR)));
         Map<String,Path> shardedTableMapFiles = new HashMap<>();
         shardedTableMapFiles.put("shard", new Path("/tmp/shard"));
         ShardedTableMapFile.addToConf(conf, shardedTableMapFiles);
@@ -491,8 +498,10 @@ public class MultiRFileOutputFormatterTest {
     public void testRFileFileSizeLimit() throws IOException, InterruptedException {
         // each key we write is 16 characters total, so a limit of 32 should allow two keys per file
         MultiRFileOutputFormatter.setRFileLimits(conf, 0, 32);
-        RecordWriter<BulkIngestKey,Value> writer = createWriter(formatter, conf);
+        TaskAttemptContext context = new TaskAttemptContextImpl(conf, new TaskAttemptID(new TaskID(new JobID(JOB_ID, 1), TaskType.MAP, 1), 1));
+        RecordWriter<BulkIngestKey,Value> writer = createWriter(formatter, context);
         writeShardPairs(writer, 3);
+        //writer.close(context);
         assertNumFileNames(4);
         assertFileNameForShardIndex(0);
         expectShardFiles(3);
@@ -526,6 +535,10 @@ public class MultiRFileOutputFormatterTest {
 
     private RecordWriter<BulkIngestKey,Value> createWriter(MultiRFileOutputFormatter formatter, Configuration conf) throws IOException, InterruptedException {
         TaskAttemptContext context = new TaskAttemptContextImpl(conf, new TaskAttemptID(new TaskID(new JobID(JOB_ID, 1), TaskType.MAP, 1), 1));
+        return formatter.getRecordWriter(context);
+    }
+
+    private RecordWriter<BulkIngestKey,Value> createWriter(MultiRFileOutputFormatter formatter, TaskAttemptContext context) throws IOException, InterruptedException {
         return formatter.getRecordWriter(context);
     }
 
