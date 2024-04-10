@@ -1009,7 +1009,7 @@ public final class BulkIngestMapFileLoader implements Runnable {
                 }
             }
             LoadPlan lp = builder.build();
-            log.debug("Consolidated LoadPlan for " + tableDir + ": " + lp);
+            log.debug("Consolidated LoadPlan for " + tableDir + ": " + gson.toJson(lp));
             return lp;
         }
 
