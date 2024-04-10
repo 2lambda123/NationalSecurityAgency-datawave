@@ -29,15 +29,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonDeserializationContext;
-import com.google.gson.JsonDeserializer;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonPrimitive;
-import com.google.gson.JsonSerializationContext;
-import com.google.gson.JsonSerializer;
 import org.apache.accumulo.core.client.Accumulo;
 import org.apache.accumulo.core.client.AccumuloClient;
 import org.apache.accumulo.core.client.AccumuloException;
@@ -76,6 +67,15 @@ import org.apache.log4j.Logger;
 
 import com.google.common.base.Objects;
 import com.google.common.collect.Lists;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSerializationContext;
+import com.google.gson.JsonSerializer;
 
 import datawave.ingest.data.TypeRegistry;
 import datawave.ingest.mapreduce.StandaloneStatusReporter;
@@ -88,8 +88,7 @@ import datawave.util.cli.PasswordConverter;
  */
 public final class BulkIngestMapFileLoader implements Runnable {
     private static final Logger log = Logger.getLogger(BulkIngestMapFileLoader.class);
-    private static final Gson gson = new GsonBuilder()
-            .registerTypeHierarchyAdapter(byte[].class, new ByteArrayToBase64TypeAdapter()).create();
+    private static final Gson gson = new GsonBuilder().registerTypeHierarchyAdapter(byte[].class, new ByteArrayToBase64TypeAdapter()).create();
     private static int SLEEP_TIME = 30000;
     private static int FAILURE_SLEEP_TIME = 10 * 60 * 1000; // 10 minutes
     private static int MAX_DIRECTORIES = 1;
@@ -131,26 +130,21 @@ public final class BulkIngestMapFileLoader implements Runnable {
 
     public enum ImportMode {
         /**
-         * Accumulo's 1.x bulk api will be used to import rfiles.   
+         * Accumulo's 1.x bulk api will be used to import rfiles.
          */
         @Deprecated
         V1,
 
         /**
-         * Accumulo's 2.x bulk api will be used to import rfiles.
-         * All rfile-to-tablet mappings are computed locally within
-         * the {@link BulkIngestMapFileLoader} JVM upon import. This
-         * will incur an import latency cost that is proportional to
-         * the size/number of rfiles to be imported and the number
-         * of tablets to be targeted
+         * Accumulo's 2.x bulk api will be used to import rfiles. All rfile-to-tablet mappings are computed locally within the {@link BulkIngestMapFileLoader}
+         * JVM upon import. This will incur an import latency cost that is proportional to the size/number of rfiles to be imported and the number of tablets to
+         * be targeted
          */
         V2_LOCAL_MAPPING,
 
         /**
-         * Accumulo's 2.x bulk api will be used to import rfiles.
-         * All rfile-to-tablet mappings are determined from precomputed
-         * {@link org.apache.accumulo.core.data.LoadPlan} files created
-         * in {@link MultiRFileOutputFormatter}
+         * Accumulo's 2.x bulk api will be used to import rfiles. All rfile-to-tablet mappings are determined from precomputed
+         * {@link org.apache.accumulo.core.data.LoadPlan} files created in {@link MultiRFileOutputFormatter}
          */
         V2_LOAD_PLANNING
     }
@@ -363,7 +357,7 @@ public final class BulkIngestMapFileLoader implements Runnable {
                 }
             }
         }
-        
+
         BULK_IMPORT_MODE = conf.getEnum(BULK_IMPORT_MODE_CONFIG, ImportMode.V1);
 
         log.info("Set sleep time to " + SLEEP_TIME + "ms");
@@ -965,7 +959,7 @@ public final class BulkIngestMapFileLoader implements Runnable {
 
                 // import the directory
                 log.info("Bringing Map Files online for " + tableName);
-                
+
                 switch (importMode) {
                     case V1:
                         // create the failures directory
@@ -983,7 +977,8 @@ public final class BulkIngestMapFileLoader implements Runnable {
                         accumuloClient.tableOperations().importDirectory(tableDir.toString()).to(tableName).ignoreEmptyDir(true).tableTime(false).load();
                         break;
                     case V2_LOAD_PLANNING:
-                        accumuloClient.tableOperations().importDirectory(tableDir.toString()).to(tableName).plan(getLoadPlan()).ignoreEmptyDir(true).tableTime(false).load();
+                        accumuloClient.tableOperations().importDirectory(tableDir.toString()).to(tableName).plan(getLoadPlan()).ignoreEmptyDir(true)
+                                        .tableTime(false).load();
                         break;
                     default:
                         throw new RuntimeException("Unsupported import mode " + importMode);
@@ -1008,18 +1003,20 @@ public final class BulkIngestMapFileLoader implements Runnable {
             for (FileStatus lp : loadPlans) {
                 try (FSDataInputStream in = fs.open(lp.getPath())) {
                     byte[] buffer = new byte[(int) lp.getLen()];
-                    in.readFully(0, buffer); 
+                    in.readFully(0, buffer);
                     String s = new String(buffer, StandardCharsets.UTF_8);
                     builder.addPlan(gson.fromJson(s, LoadPlan.class));
                 }
             }
-            return builder.build();
+            LoadPlan lp = builder.build();
+            log.debug("Consolidated LoadPlan for " + tableDir + ": " + lp);
+            return lp;
         }
 
         private void collapseDirectory() throws IOException {
             collapseDirectory(tableDir);
         }
-        
+
         private void collapseDirectory(Path dir) throws IOException {
             // collapse any subdirectories, and then collapse those to the top level
             FileSystem fileSystem = FileSystem.get(srcHdfs, new Configuration());
@@ -1408,14 +1405,12 @@ public final class BulkIngestMapFileLoader implements Runnable {
         }
     }
 
-    public static class ByteArrayToBase64TypeAdapter
-            implements JsonSerializer<byte[]>, JsonDeserializer<byte[]> {
+    public static class ByteArrayToBase64TypeAdapter implements JsonSerializer<byte[]>, JsonDeserializer<byte[]> {
         Base64.Decoder decoder = Base64.getUrlDecoder();
         Base64.Encoder encoder = Base64.getUrlEncoder();
 
         @Override
-        public byte[] deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
-                throws JsonParseException {
+        public byte[] deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
             return decoder.decode(json.getAsString());
         }
 

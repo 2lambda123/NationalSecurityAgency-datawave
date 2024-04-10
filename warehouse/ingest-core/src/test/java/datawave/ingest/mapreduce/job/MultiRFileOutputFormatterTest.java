@@ -1,5 +1,8 @@
 package datawave.ingest.mapreduce.job;
 
+import static datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.BULK_IMPORT_MODE_CONFIG;
+import static datawave.ingest.mapreduce.job.TableSplitsCache.SPLITS_CACHE_DIR;
+
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -43,9 +46,6 @@ import org.powermock.api.easymock.PowerMock;
 import datawave.ingest.data.config.ingest.AccumuloHelper;
 import datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.ImportMode;
 import datawave.util.TableName;
-
-import static datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.BULK_IMPORT_MODE_CONFIG;
-import static datawave.ingest.mapreduce.job.TableSplitsCache.SPLITS_CACHE_DIR;
 
 public class MultiRFileOutputFormatterTest {
 
@@ -501,7 +501,7 @@ public class MultiRFileOutputFormatterTest {
         TaskAttemptContext context = new TaskAttemptContextImpl(conf, new TaskAttemptID(new TaskID(new JobID(JOB_ID, 1), TaskType.MAP, 1), 1));
         RecordWriter<BulkIngestKey,Value> writer = createWriter(formatter, context);
         writeShardPairs(writer, 3);
-        //writer.close(context);
+        // writer.close(context);
         assertNumFileNames(4);
         assertFileNameForShardIndex(0);
         expectShardFiles(3);
@@ -538,7 +538,8 @@ public class MultiRFileOutputFormatterTest {
         return formatter.getRecordWriter(context);
     }
 
-    private RecordWriter<BulkIngestKey,Value> createWriter(MultiRFileOutputFormatter formatter, TaskAttemptContext context) throws IOException, InterruptedException {
+    private RecordWriter<BulkIngestKey,Value> createWriter(MultiRFileOutputFormatter formatter, TaskAttemptContext context)
+                    throws IOException, InterruptedException {
         return formatter.getRecordWriter(context);
     }
 

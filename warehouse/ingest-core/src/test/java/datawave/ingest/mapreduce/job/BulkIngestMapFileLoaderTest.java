@@ -26,7 +26,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import com.google.gson.Gson;
 import org.apache.accumulo.core.client.AccumuloClient;
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.client.AccumuloSecurityException;
@@ -66,6 +65,7 @@ import org.powermock.api.easymock.PowerMock;
 import org.powermock.reflect.Whitebox;
 
 import com.google.common.collect.Multimap;
+import com.google.gson.Gson;
 
 import datawave.common.test.integration.IntegrationTest;
 import datawave.common.test.logging.TestLogCollector;
@@ -84,7 +84,7 @@ public class BulkIngestMapFileLoaderTest {
     public static TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     protected static final URI FILE_SYSTEM_URI = URI.create("file:///");
-    
+
     protected static final Logger logger = Logger.getLogger(BulkIngestMapFileLoaderTest.class);
 
     private static final String PASSWORD = "secret";
@@ -210,11 +210,6 @@ public class BulkIngestMapFileLoaderTest {
                 false,
                 ImportMode.V2_LOCAL_MAPPING);
         // @formatter:on
-    }
-    
-    private void readLoadPlans() {
-        final Gson gson = new Gson();
-        
     }
 
     private void verifyImportedData() throws TableNotFoundException {
