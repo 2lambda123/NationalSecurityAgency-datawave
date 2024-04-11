@@ -321,20 +321,20 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
             int startPos = -1;
             int endPos = -1;
 
-            List<Text> tableSplits = cache.getSplits(table);
-            if (!tableSplits.isEmpty()) {
-                startPos = Collections.binarySearch(tableSplits, startRow);
-                endPos = Collections.binarySearch(tableSplits, endRow);
-            }
+//            List<Text> tableSplits = cache.getSplits(table);
+//            if (!tableSplits.isEmpty()) {
+//                startPos = Collections.binarySearch(tableSplits, startRow);
+//                endPos = Collections.binarySearch(tableSplits, endRow);
+//            }
 
             LoadPlan.RangeType rangeType = LoadPlan.RangeType.FILE;
-            if (startPos >= 0 && endPos >= 0 && startPos < endPos) {
-                log.error(String.format("Got RangeType.TABLE for file [%s], table [%s], thread [%s : %s]", filepath.getName(), table,
-                                Thread.currentThread().getName(), Thread.currentThread().getId()));
-                rangeType = LoadPlan.RangeType.TABLE;
-            }
+//            if (startPos >= 0 && endPos >= 0 && startPos < endPos) {
+//                log.debug(String.format("Got RangeType.TABLE for file [%s], table [%s], thread [%s : %s]", filepath.getName(), table,
+//                                Thread.currentThread().getName(), Thread.currentThread().getId()));
+//                rangeType = LoadPlan.RangeType.TABLE;
+//            }
 
-            log.error(String.format(
+            log.debug(String.format(
                             "Creating load plan for table:[%s], filepath:[%s], startRow:[%s], endRow:[%s], workDir:[%s], rangeType:[%s], thread [%s : %s]",
                             table, filepath, startRow, endRow, workDir, rangeType.name(), Thread.currentThread().getName(), Thread.currentThread().getId()));
 
@@ -348,7 +348,7 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
             var builder = LoadPlan.builder();
             var table = entry.getKey();
             var path = new Path(String.format("%s/%s", workDir, table), getUniqueFile(context, "loadplan", ".json"));
-            log.error(String.format("Writing load plan for table:[%s], filepath:[%s], thread [%s - %s]", table, path, Thread.currentThread().getName(),
+            log.debug(String.format("Writing load plan for table:[%s], filepath:[%s], thread [%s-%s]", table, path, Thread.currentThread().getName(),
                             Thread.currentThread().getId()));
             entry.getValue().stream().forEach(plan -> builder.addPlan(plan));
             var loadPlan = builder.build();
