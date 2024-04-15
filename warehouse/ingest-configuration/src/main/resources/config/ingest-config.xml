@@ -91,6 +91,16 @@
   <name>partitioner.default.delegate</name>
   <value>datawave.ingest.mapreduce.partition.MultiTableRRRangePartitioner</value>
 </property>
+    
+<property>
+    <name>datawave.ingest.mapreduce.partition.MultiTableRRRangePartitioner.generateMapFilePerShardLocation</name>
+    <value>true</value>
+</property>
+
+<property>
+    <name>datawave.ingest.mapreduce.partition.MultiTableRRRangePartitioner.generateMapFileRowKeys</name>
+    <value>true</value>
+</property>
 
 <property>
     <name>ingest.bulk.import.mode</name>

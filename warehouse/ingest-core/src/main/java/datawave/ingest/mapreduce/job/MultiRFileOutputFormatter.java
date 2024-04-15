@@ -321,18 +321,18 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
             int startPos = -1;
             int endPos = -1;
 
-//            List<Text> tableSplits = cache.getSplits(table);
-//            if (!tableSplits.isEmpty()) {
-//                startPos = Collections.binarySearch(tableSplits, startRow);
-//                endPos = Collections.binarySearch(tableSplits, endRow);
-//            }
+            List<Text> tableSplits = cache.getSplits(table);
+            if (!tableSplits.isEmpty()) {
+                startPos = Collections.binarySearch(tableSplits, startRow);
+                endPos = Collections.binarySearch(tableSplits, endRow);
+            }
 
             LoadPlan.RangeType rangeType = LoadPlan.RangeType.FILE;
-//            if (startPos >= 0 && endPos >= 0 && startPos < endPos) {
-//                log.debug(String.format("Got RangeType.TABLE for file [%s], table [%s], thread [%s : %s]", filepath.getName(), table,
-//                                Thread.currentThread().getName(), Thread.currentThread().getId()));
-//                rangeType = LoadPlan.RangeType.TABLE;
-//            }
+            if (startPos >= 0 && endPos >= 0 && startPos < endPos) {
+                log.debug(String.format("Got RangeType.TABLE for file [%s], table [%s], thread [%s : %s]", filepath.getName(), table,
+                                Thread.currentThread().getName(), Thread.currentThread().getId()));
+                rangeType = LoadPlan.RangeType.TABLE;
+            }
 
             log.debug(String.format(
                             "Creating load plan for table:[%s], filepath:[%s], startRow:[%s], endRow:[%s], workDir:[%s], rangeType:[%s], thread [%s : %s]",
