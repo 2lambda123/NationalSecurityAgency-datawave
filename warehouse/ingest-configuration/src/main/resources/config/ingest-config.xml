@@ -92,7 +92,7 @@
   <value>datawave.ingest.mapreduce.partition.MultiTableRRRangePartitioner</value>
 </property>
     
-<property>
+<!--<property>
     <name>datawave.ingest.mapreduce.partition.MultiTableRRRangePartitioner.generateMapFilePerShardLocation</name>
     <value>true</value>
 </property>
@@ -100,7 +100,7 @@
 <property>
     <name>datawave.ingest.mapreduce.partition.MultiTableRRRangePartitioner.generateMapFileRowKeys</name>
     <value>true</value>
-</property>
+</property>-->
 
 <property>
     <name>ingest.bulk.import.mode</name>
