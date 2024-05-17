@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.apache.log4j.Logger;
 import org.apache.commons.jexl3.parser.ASTAddNode;
 import org.apache.commons.jexl3.parser.ASTAndNode;
 import org.apache.commons.jexl3.parser.ASTArrayAccess;
@@ -65,6 +66,8 @@ import datawave.query.util.MetadataHelper;
 public class QueryFieldsVisitor extends BaseVisitor {
 
     private final MetadataHelper helper;
+
+    private static final Logger LOGGER = Logger.getLogger(QueryFieldsVisitor.class);
 
     public static Set<String> parseQueryFields(String query, MetadataHelper helper) {
         try {
@@ -155,8 +158,12 @@ public class QueryFieldsVisitor extends BaseVisitor {
     @Override
     public Object visit(ASTFunctionNode node, Object data) {
         JexlArgumentDescriptor desc = JexlFunctionArgumentDescriptorFactory.F.getArgumentDescriptor(node);
-        Set<String> fields = desc.fields(helper, null);
-        ((Set<String>) data).addAll(fields);
+        Set<String> fields = null;
+        if (desc != null) {
+            fields = desc.fields(helper, null);
+            ((Set<String>) data).addAll(fields);
+        }
+
         return data;
     }
 

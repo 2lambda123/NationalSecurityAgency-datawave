@@ -6,6 +6,7 @@ import static datawave.query.jexl.nodes.QueryPropertyMarker.MarkerType.EVALUATIO
 
 import java.util.Arrays;
 
+import org.apache.log4j.Logger;
 import org.apache.commons.jexl3.parser.ASTAndNode;
 import org.apache.commons.jexl3.parser.ASTERNode;
 import org.apache.commons.jexl3.parser.ASTFunctionNode;
@@ -31,13 +32,14 @@ import datawave.query.util.MetadataHelper;
 /**
  * Visits an JexlNode tree, and expand the functions to be AND'ed with their index query equivalents. Note that the functions are left in the final query to
  * provide potentially additional filtering after applying the index query.
- *
  */
 public class FunctionIndexQueryExpansionVisitor extends RebuildingVisitor {
 
     protected ShardQueryConfiguration config;
     protected MetadataHelper metadataHelper;
     protected DateIndexHelper dateIndexHelper;
+
+    private static final Logger LOGGER = Logger.getLogger(FunctionIndexQueryExpansionVisitor.class);
 
     public FunctionIndexQueryExpansionVisitor(ShardQueryConfiguration config, MetadataHelper metadataHelper, DateIndexHelper dateIndexHelper) {
         this.config = config;
@@ -115,7 +117,7 @@ public class FunctionIndexQueryExpansionVisitor extends RebuildingVisitor {
                 return rebuiltNode.jjtAccept(this, data);
         }
 
-        if (!evaluationOnly) {
+        if (!evaluationOnly && desc != null) {
             JexlNode indexQuery = desc.getIndexQuery(config, this.metadataHelper, this.dateIndexHelper, this.config.getDatatypeFilter());
             if (indexQuery != null && !(indexQuery instanceof ASTTrueNode)) {
                 if (desc instanceof ContentFunctionsDescriptor.ContentJexlArgumentDescriptor) {
