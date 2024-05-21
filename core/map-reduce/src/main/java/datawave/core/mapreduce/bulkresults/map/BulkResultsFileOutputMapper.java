@@ -1,7 +1,5 @@
 package datawave.core.mapreduce.bulkresults.map;
 
-import static org.jgroups.util.Util.assertNotNull;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
