@@ -1,16 +1,21 @@
 package datawave.ingest.mapreduce.job;
 
+import static datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.BULK_IMPORT_MODE_CONFIG;
 import static org.apache.accumulo.core.conf.Property.TABLE_CRYPTO_PREFIX;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.accumulo.core.client.AccumuloException;
 import org.apache.accumulo.core.conf.AccumuloConfiguration;
@@ -20,6 +25,7 @@ import org.apache.accumulo.core.crypto.CryptoFactoryLoader;
 import org.apache.accumulo.core.data.ArrayByteSequence;
 import org.apache.accumulo.core.data.ByteSequence;
 import org.apache.accumulo.core.data.Key;
+import org.apache.accumulo.core.data.LoadPlan;
 import org.apache.accumulo.core.data.Value;
 import org.apache.accumulo.core.file.FileOperations;
 import org.apache.accumulo.core.file.FileSKVIterator;
@@ -30,6 +36,7 @@ import org.apache.accumulo.core.spi.crypto.CryptoService;
 import org.apache.accumulo.core.spi.file.rfile.compression.NoCompression;
 import org.apache.commons.lang.mutable.MutableInt;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -46,9 +53,12 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 import datawave.ingest.data.config.ingest.AccumuloHelper;
 import datawave.ingest.mapreduce.handler.shard.ShardedDataTypeHandler;
+import datawave.ingest.mapreduce.job.BulkIngestMapFileLoader.ImportMode;
 import datawave.marking.MarkingFunctions;
 import datawave.util.StringUtils;
 
@@ -56,7 +66,13 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
 
     private static final Logger log = Logger.getLogger(MultiRFileOutputFormatter.class);
 
+    private static final Gson gson = new GsonBuilder().registerTypeHierarchyAdapter(byte[].class, new BulkIngestMapFileLoader.ByteArrayToBase64TypeAdapter())
+                    .create();
+
+    protected static TableSplitsCache splitsCache = null;
+
     protected Map<String,SizeTrackingWriter> writers = null;
+    protected Map<String,Set<LoadPlan>> tableLoadPlans = new HashMap<>();
     protected Map<String,Path> unusedWriterPaths = null;
     protected Map<String,Path> usedWriterPaths = null;
     protected Map<String,String> writerTableNames = null;
@@ -176,6 +192,17 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
         conf.set(CONFIGURE_LOCALITY_GROUPS, Joiner.on(",").join(splits, tableName));
     }
 
+    public static boolean loadPlanningEnabled(Configuration conf) {
+        return conf.getEnum(BULK_IMPORT_MODE_CONFIG, ImportMode.V1).equals(ImportMode.V2_LOAD_PLANNING);
+    }
+
+    protected static TableSplitsCache getSplitsCache(Configuration conf) {
+        if (splitsCache == null) {
+            splitsCache = new TableSplitsCache(conf);
+        }
+        return splitsCache;
+    }
+
     /**
      * Insert a count into the filename. The filename is expected to end with our extension.
      *
@@ -273,6 +300,9 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
             Path filename = usedWriterPaths.get(key);
             // don't bother if this writer has not been used yet
             if (filename != null) {
+                if (loadPlanningEnabled(conf)) {
+                    addLoadPlanForFile(writer, table, filename);
+                }
                 writer.close();
                 // pull the index off the filename
                 filename = removeFileCount(filename);
@@ -281,10 +311,68 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
         }
     }
 
+    private void addLoadPlanForFile(SizeTrackingWriter writer, String table, Path filepath) throws IOException {
+        TableSplitsCache cache = getSplitsCache(conf);
+
+        if (writer != null && writer.entries > 0) {
+            
+            if (!tableLoadPlans.containsKey(table)) {
+                tableLoadPlans.put(table, new HashSet<>());
+            }
+
+            List<Text> tableSplits = cache.getSplits(table);
+
+            if (tableSplits.isEmpty()) {
+                // @formatter:off
+                tableLoadPlans.get(table).add(
+                   LoadPlan.builder().loadFileTo(filepath.getName(), LoadPlan.RangeType.FILE, writer.rows.first(), writer.rows.last()).build()
+                );
+                // @formatter:on
+            } else {
+                Text previous = null;
+                // If non-empty, tableSplits should be an ordered ArrayList of split points
+                ArrayList<Text> ts = (ArrayList<Text>) tableSplits;
+                for (Text current : writer.rows) {
+                    Text prevEndRow = null;
+                    // find prevEndRow extent for current endRow
+                    int rowSplit = Collections.binarySearch(ts, current);
+                    if (rowSplit > 0) {
+                        prevEndRow = ts.get(rowSplit-1);
+                    }
+                    LoadPlan.RangeType rangeType = LoadPlan.RangeType.FILE;
+                    if (prevEndRow != null) {
+                        rangeType = LoadPlan.RangeType.TABLE;
+                        tableLoadPlans.get(table).add(LoadPlan.builder().loadFileTo(filepath.getName(), rangeType, prevEndRow, current).build());
+                    } else {
+                        tableLoadPlans.get(table).add(LoadPlan.builder().loadFileTo(filepath.getName(), rangeType, previous, current).build());
+                    }
+                    previous = current;
+                }
+            }
+        }
+    }
+
+    private void writeLoadPlans(TaskAttemptContext context) throws IOException {
+        // Consolidate plans for each table into a single file
+        for (Map.Entry<String,Set<LoadPlan>> entry : tableLoadPlans.entrySet()) {
+            var builder = LoadPlan.builder();
+            var table = entry.getKey();
+            var path = new Path(String.format("%s/%s", workDir, table), getUniqueFile(context, "loadplan", ".json"));
+            log.debug(String.format("Writing load plan for table:[%s], filepath:[%s], thread [%s-%s]", table, path, Thread.currentThread().getName(),
+                            Thread.currentThread().getId()));
+            entry.getValue().stream().forEach(plan -> builder.addPlan(plan));
+            var loadPlan = builder.build();
+            try (FSDataOutputStream out = fs.create(path)) {
+                out.write(gson.toJson(loadPlan).getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    }
+
     public static class SizeTrackingWriter implements FileSKVWriter {
         private FileSKVWriter delegate;
         long size = 0;
         int entries = 0;
+        TreeSet<Text> rows = new TreeSet<>();
 
         public long getSize() {
             return size;
@@ -308,6 +396,7 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
 
         public void append(Key key, Value value) throws IOException {
             entries++;
+            rows.add(key.getRow());
             size += key.getLength() + (value == null ? 0 : value.getSize());
             delegate.append(key, value);
         }
@@ -489,6 +578,9 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
         generateMapFileRowKeys = conf.getBoolean(GENERATE_MAP_FILE_ROW_KEYS, generateMapFileRowKeys);
         generateMapFilePerShardLocation = conf.getBoolean(GENERATE_MAP_FILE_PER_SHARD_LOCATION, generateMapFilePerShardLocation);
 
+        log.error("generateMapFilePerShardLocation is: " + generateMapFilePerShardLocation);
+        log.error("generateMapFileRowKeys is: " + generateMapFileRowKeys);
+
         // Only do this once.
         if (null == writers) {
             writers = new HashMap<>();
@@ -561,10 +653,23 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
 
             @Override
             public void close(TaskAttemptContext context) throws IOException, InterruptedException {
-                // Close all of the Map File Writers
-                for (SizeTrackingWriter writer : writers.values()) {
+                boolean loadPlanning = loadPlanningEnabled(conf);
+
+                // Close each writer. Add its associated load plan prior to doing so
+                for (Map.Entry<String,SizeTrackingWriter> entry : writers.entrySet()) {
+                    var writer = entry.getValue();
+                    if (loadPlanning) {
+                        var table = writerTableNames.get(entry.getKey());
+                        var file = usedWriterPaths.get(entry.getKey());
+                        addLoadPlanForFile(writer, table, file);
+                    }
                     writer.close();
                 }
+
+                if (loadPlanning) {
+                    writeLoadPlans(context);
+                }
+
                 // To verify the file was actually written successfully, we need to reopen it which will reread
                 // the index at the end and verify its integrity.
                 FileOperations fops = FileOperations.getInstance();
@@ -586,6 +691,7 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
                         throw new IOException(ex);
                     }
                 }
+
                 for (Path path : unusedWriterPaths.values()) {
                     log.info("Nothing written to " + path + ".  Deleting from HDFS.");
                     fs.delete(path, true);
@@ -625,6 +731,9 @@ public class MultiRFileOutputFormatter extends FileOutputFormat<BulkIngestKey,Va
                         if (shardLocation == null) {
                             // in this case we have a shard id that has no split. Lets put this in one "extra" file
                             shardLocation = "extra";
+                        } else {
+                            // Ensure there's no colon
+                            shardLocation = shardLocation.replace(":", "_");
                         }
                     }
                     // Combine table name with shard location so that we end up
