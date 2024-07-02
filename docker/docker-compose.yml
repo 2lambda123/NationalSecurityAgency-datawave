@@ -397,6 +397,8 @@ services:
       - HADOOP_CONF_DIR=${HADOOP_CONF_DIR:-/etc/hadoop/conf}
       - "BACKEND=${BACKEND:-kafka}"
       - CACHED_RESULTS=${CACHED_RESULTS:-false}
+      - HAZELCAST_CLUSTER_NAME=cache2
+      - JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
     ports:
       - "8080:8080"
       - "8443:8443"

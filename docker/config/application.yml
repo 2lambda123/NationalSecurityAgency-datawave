@@ -73,12 +73,20 @@ spring:
   jackson:
     default-property-include: non_null
 
+#hazelcast:
+#  client:
+#    clusterName: cache
+#  client2:
+#    clusterName: cache2
+
 hazelcast:
   client:
     cluster1:
       clusterName: cache
     cluster2:
       clusterName: cache2
+
+hazelcast.default-cluster: cache
 
 # The default URI for remote authorization
 datawave:
