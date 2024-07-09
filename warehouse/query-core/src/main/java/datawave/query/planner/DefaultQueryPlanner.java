@@ -339,6 +339,7 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
         setSourceLimit(other.sourceLimit);
         setPushdownThreshold(other.getPushdownThreshold());
         setVisitorManager(other.getVisitorManager());
+        setTransformRules(other.getTransformRules() == null ? null : new ArrayList<>(other.transformRules));
     }
 
     public void setMetadataHelper(final MetadataHelper metadataHelper) {
@@ -1927,17 +1928,23 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
             if (log.isTraceEnabled()) {
                 log.trace("Stack trace for overflow " + soe);
             }
-            stopwatch.stop();
+            if (stopwatch != null) {
+                stopwatch.stop();
+            }
             PreConditionFailedQueryException qe = new PreConditionFailedQueryException(DatawaveErrorCode.QUERY_DEPTH_OR_TERM_THRESHOLD_EXCEEDED, soe);
             log.warn(qe);
             throw new DatawaveFatalQueryException(qe);
         } catch (ParseException e) {
-            stopwatch.stop();
+            if (stopwatch != null) {
+                stopwatch.stop();
+            }
             BadRequestQueryException qe = new BadRequestQueryException(DatawaveErrorCode.UNPARSEABLE_JEXL_QUERY, e, MessageFormat.format("Query: {0}", query));
             log.warn(qe);
             throw new DatawaveFatalQueryException(qe);
         } catch (PatternSyntaxException e) {
-            stopwatch.stop();
+            if (stopwatch != null) {
+                stopwatch.stop();
+            }
             BadRequestQueryException qe = new BadRequestQueryException(DatawaveErrorCode.INVALID_REGEX, e, MessageFormat.format("Query: {0}", query));
             log.warn(qe);
             throw new DatawaveFatalQueryException(qe);
@@ -2965,6 +2972,10 @@ public class DefaultQueryPlanner extends QueryPlanner implements Cloneable {
     @Override
     public String getPlannedScript() {
         return plannedScript;
+    }
+
+    public void setPlannedScript(String plannedScript) {
+        this.plannedScript = plannedScript;
     }
 
     protected Multimap<String,Type<?>> configureIndexedAndNormalizedFields(MetadataHelper metadataHelper, ShardQueryConfiguration config,
