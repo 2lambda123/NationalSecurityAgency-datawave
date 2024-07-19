@@ -49,6 +49,7 @@ import com.google.common.collect.Sets;
 
 import datawave.core.query.configuration.GenericQueryConfiguration;
 import datawave.core.query.configuration.QueryData;
+import datawave.core.query.jexl.LiteralRange;
 import datawave.data.type.Type;
 import datawave.microservice.query.Query;
 import datawave.query.Constants;
@@ -56,7 +57,6 @@ import datawave.query.QueryParameters;
 import datawave.query.discovery.FindLiteralsAndPatternsVisitor.QueryValues;
 import datawave.query.exceptions.IllegalRangeArgumentException;
 import datawave.query.jexl.JexlASTHelper;
-import datawave.query.jexl.LiteralRange;
 import datawave.query.jexl.lookups.ShardIndexQueryTableStaticMethods;
 import datawave.query.jexl.visitors.CaseSensitivityVisitor;
 import datawave.query.jexl.visitors.QueryModelVisitor;

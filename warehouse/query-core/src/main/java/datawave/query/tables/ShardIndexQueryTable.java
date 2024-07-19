@@ -188,7 +188,7 @@ public class ShardIndexQueryTable extends BaseQueryLogic<DiscoveredThing> implem
         getConfig().setClient(client);
         this.scannerFactory = new ScannerFactory(getConfig());
 
-        MetadataHelper metadataHelper = initializeMetadataHelper(client, config.getMetadataTableName(), auths);
+        MetadataHelper metadataHelper = initializeMetadataHelper(client, getConfig().getMetadataTableName(), auths);
 
         if (StringUtils.isEmpty(settings.getQuery())) {
             throw new IllegalArgumentException("Query cannot be null");
