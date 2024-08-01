@@ -902,6 +902,10 @@ public abstract class DatawaveFieldIndexCachingIteratorJexl extends WrappingIter
             } else {
                 try {
                     result = future.get();
+                } catch (InterruptedException e) {
+                    exception = e;
+                    result = e;
+                    Thread.currentThread().interrupt();
                 } catch (Exception e) {
                     exception = e;
                     result = e;

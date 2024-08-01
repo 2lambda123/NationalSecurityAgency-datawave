@@ -215,6 +215,7 @@ public class PushdownFunction implements Function<QueryData,List<ScannerChunk>> 
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     throw new RuntimeException(e);
                 }
             } else {

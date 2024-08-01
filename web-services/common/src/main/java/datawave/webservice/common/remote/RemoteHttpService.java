@@ -209,6 +209,7 @@ public abstract class RemoteHttpService {
                 try {
                     Thread.sleep(1000L);
                 } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     break;
                 }
                 totalWait = System.currentTimeMillis() - waitStart;
@@ -591,6 +592,7 @@ public abstract class RemoteHttpService {
                     try {
                         Thread.sleep(unavailableRetryDelay);
                     } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                         // Ignore -- we'll just end up retrying a little too fast
                     }
                 }
