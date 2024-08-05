@@ -5,7 +5,6 @@ import java.nio.charset.CharacterCodingException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedSet;
@@ -65,6 +64,19 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
     protected Key tk;
     // the top value
     protected Value tv;
+
+    private float origHalfSize;
+    // the list of hit terms
+    protected ArrayList<String> hitTermsList;
+    // the direction for the excerpt
+    private String direction;
+
+    private boolean trim;
+
+    private static final String BEFORE = "BEFORE";
+    private static final String AFTER = "AFTER";
+    private static final String BOTH = "BOTH";
+    private static final String XXXWESKIPPEDAWORDXXX = "XXXWESKIPPEDAWORDXXX";
 
     @Override
     public IteratorOptions describeOptions() {
@@ -135,6 +147,10 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
         this.startOffset = Integer.parseInt(options.get(START_OFFSET));
         this.endOffset = Integer.parseInt(options.get(END_OFFSET));
         this.fieldName = options.get(FIELD_NAME);
+        hitTermsList = new ArrayList<>();
+        direction = BOTH;
+        origHalfSize = 0;
+        trim = false;
     }
 
     @Override
@@ -193,12 +209,12 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
             String dtAndUid = getDtUidFromEventKey(range.getEndKey(), false, range.isEndKeyInclusive());
             // if no end document
             if (dtAndUid == null) {
-                // if we do not have column families specified or they are not inclusive
+                // if we do not have column families specified, or they are not inclusive
                 if (this.columnFamilies.isEmpty() || !this.inclusive) {
                     // then go to the end of the TFs
                     endKey = new Key(range.getEndKey().getRow(), Constants.TERM_FREQUENCY_COLUMN_FAMILY, new Text(Constants.MAX_UNICODE_STRING));
                 } else {
-                    // othersize end at the last document specified
+                    // otherwise end at the last document specified
                     endKey = new Key(range.getEndKey().getRow(), Constants.TERM_FREQUENCY_COLUMN_FAMILY,
                                     new Text(this.columnFamilies.last() + Constants.NULL + Constants.MAX_UNICODE_STRING));
                 }
@@ -239,7 +255,7 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
         tv = null;
 
         if (log.isTraceEnabled()) {
-            log.trace(source.hasTop() + " nexting on " + scanRange);
+            log.trace(source.hasTop() + " next'ing on " + scanRange);
         }
 
         // find a valid dt/uid (depends on initial column families set in seek call)
@@ -264,7 +280,13 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
         Text cv = top.getColumnVisibility();
         long ts = top.getTimestamp();
         Text row = top.getRow();
-        List<String>[] terms = new List[endOffset - startOffset];
+        // set the size of the array to the amount of terms we need to choose
+        WordsAndScores[] terms = new WordsAndScores[endOffset - startOffset];
+        boolean stopFound;
+
+        if (dtUid == null) {
+            return;
+        }
 
         // while we have term frequencies for the same document
         while (source.hasTop() && dtUid.equals(getDtUidFromTfKey(source.getTopKey()))) {
@@ -278,6 +300,16 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
                 try {
                     // parse the offsets from the value
                     TermWeight.Info info = TermWeight.Info.parseFrom(source.getTopValue().get());
+                    // check if the number of scores is equal to the number of offsets
+                    boolean useScores = info.getScoreCount() == info.getTermOffsetCount();
+                    boolean hasOnlyNegativeScores = true;
+                    List<Integer> scoreList = info.getScoreList();
+                    for (Integer integer : scoreList) {
+                        if (integer >= 0) {
+                            hasOnlyNegativeScores = false;
+                            break;
+                        }
+                    }
 
                     // for each offset, gather all the terms in our range
                     for (int i = 0; i < info.getTermOffsetCount(); i++) {
@@ -286,12 +318,22 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
                         if (offset >= startOffset && offset < endOffset) {
                             // calculate the index in our value list
                             int index = offset - startOffset;
-                            // if the value is larger than the value for this offset thus far
+                            // if the current index has no words/scores yet, initialize an object at the index
                             if (terms[index] == null) {
-                                terms[index] = new ArrayList<>();
+                                terms[index] = new WordsAndScores();
                             }
-                            // use this value
-                            terms[index].add(fieldAndValue[1]);
+                            // if we are using scores, add the word and score to the object, if not then only add the word
+                            if (useScores && !hasOnlyNegativeScores) {
+                                stopFound = terms[index].addTerm(fieldAndValue[1], scoreList.get(i), hitTermsList);
+                            } else {
+                                stopFound = terms[index].addTerm(fieldAndValue[1], hitTermsList);
+                            }
+                            if (stopFound && !trim) {
+                                tk = new Key(row, new Text(dtUid), new Text(fieldName + Constants.NULL + XXXWESKIPPEDAWORDXXX + Constants.NULL
+                                                + XXXWESKIPPEDAWORDXXX + Constants.NULL + XXXWESKIPPEDAWORDXXX), cv, ts);
+                                tv = new Value();
+                                return;
+                            }
                         }
                     }
                 } catch (InvalidProtocolBufferException e) {
@@ -302,9 +344,38 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
             // get the next term frequency
             source.next();
         }
-
         // generate the return key and value
-        tk = new Key(row, new Text(dtUid), new Text(fieldName + Constants.NULL + generatePhrase(terms)), cv, ts);
+        String phraseWithScores = generatePhrase(terms);
+        boolean usedScores = false;
+        // check to see if we have something scored and if so, turn off outputting the scores
+        for (WordsAndScores term : terms) {
+            if (term == null) {
+                continue;
+            }
+            if (term.getUseScores()) {
+                usedScores = true;
+                term.setOutputScores(false);
+            }
+        }
+        String phraseWithoutScores = generatePhrase(terms);
+        String oneBestExcerpt;
+        // if not scored, we won't output anything for these two parts
+        if (!usedScores && startOffset < endOffset && !phraseWithScores.isEmpty()) {
+            phraseWithScores = "XXXNOTSCOREDXXX";
+            oneBestExcerpt = "XXXNOTSCOREDXXX";
+        } else {
+            for (WordsAndScores term : terms) {
+                if (term == null) {
+                    continue;
+                }
+                term.setOneBestExcerpt(true);
+            }
+            oneBestExcerpt = generatePhrase(terms);
+        }
+
+        tk = new Key(row, new Text(dtUid),
+                        new Text(fieldName + Constants.NULL + phraseWithScores + Constants.NULL + phraseWithoutScores + Constants.NULL + oneBestExcerpt), cv,
+                        ts);
         tv = new Value();
     }
 
@@ -315,28 +386,244 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
      *            the terms to create a phrase from
      * @return the phrase
      */
-    protected String generatePhrase(List<String>[] terms) {
-        String[] largestTerms = new String[terms.length];
+    protected String generatePhrase(WordsAndScores[] terms) {
+        checkForHitPhrase(terms);
+        overrideOutputLongest(terms);
+        // create an array with the same length as the one we just passed in
+        String[] termsToOutput = new String[terms.length];
+        boolean bef = direction.equals(BEFORE);
+        boolean aft = direction.equals(AFTER);
+        boolean lock = false;
+        int beforeIndex = -1;
+        int afterIndex = -1;
         for (int i = 0; i < terms.length; i++) {
-            largestTerms[i] = getLongestTerm(terms[i]);
+            // if there is nothing at this position, put nothing in the position in the new one
+            if (terms[i] == null) {
+                termsToOutput[i] = null;
+            } else {
+                String outputWord = terms[i].getWordToOutput();
+                // if the term to put in this position is in the stop list, put nothing in its place
+                if (outputWord == null) {
+                    termsToOutput[i] = null;
+                } else {
+                    // if the term to output is valid, put it in the same position in the new array
+                    termsToOutput[i] = outputWord;
+                    if ((bef || aft) && (terms[i].getHasHitTerm())) {
+                        if (!lock) {
+                            afterIndex = i;
+                            lock = true;
+                        }
+                        beforeIndex = i;
+                    }
+                }
+            }
         }
-
-        return joiner.join(largestTerms);
+        if (!lock) {
+            if (!trim) {
+                // join everything together with spaces while skipping null offsets
+                return joiner.join(termsToOutput);
+            } else {
+                // join everything together with spaces while skipping null offsets (after trimming both sides down to what we need)
+                return joiner.join(bothTrim(termsToOutput));
+            }
+        } else {
+            if (bef) { // if direction is "before", set everything after the last hit term to null
+                for (int k = beforeIndex + 1; k < terms.length; k++) {
+                    termsToOutput[k] = null;
+                }
+                if (trim) {
+                    int start = (int) (beforeIndex - (origHalfSize * 2));
+                    trimBeginning(termsToOutput, beforeIndex, start);
+                }
+            } else { // if direction is "after", set everything before the first hit term to null
+                for (int k = 0; k < afterIndex; k++) {
+                    termsToOutput[k] = null;
+                }
+                if (trim) {
+                    int start = (int) (afterIndex + (origHalfSize * 2));
+                    trimEnd(termsToOutput, afterIndex, start);
+                }
+            }
+            // join everything together with spaces while skipping null offsets
+            return joiner.join(termsToOutput);
+        }
     }
 
     /**
-     * Get the longest term from a list of terms;
+     * Trim down both side of the excerpt to the size that we want
+     *
+     * @param termsToOutput
+     *            the terms to create a phrase from
+     * @return the trimmed array
+     */
+    private String[] bothTrim(String[] termsToOutput) {
+        int expandedMid = (endOffset - startOffset) / 2;
+        int start = (int) (expandedMid - origHalfSize);
+        trimBeginning(termsToOutput, expandedMid, start);
+        start = (int) (expandedMid + origHalfSize);
+        trimEnd(termsToOutput, expandedMid, start);
+        return termsToOutput;
+    }
+
+    /**
+     * Trims off the front to get the correct size
+     *
+     * @param termsToOutput
+     *            the terms to create a phrase from
+     * @param beforeIndex
+     *            the index in the array to start at
+     * @param start
+     *            the index in the array where we want to start setting values to null at
+     */
+    private void trimBeginning(String[] termsToOutput, int beforeIndex, int start) {
+        boolean startNull = false;
+        for (int k = beforeIndex; k >= 0; k--) {
+            if (!startNull && k < start) {
+                startNull = true;
+            }
+            if (startNull) {
+                termsToOutput[k] = null;
+            } else {
+                if (termsToOutput[k] == null) {
+                    start--;
+                }
+            }
+        }
+    }
+
+    /**
+     * Trims off the end to get the correct size
+     *
+     * @param termsToOutput
+     *            the terms to create a phrase from
+     * @param afterIndex
+     *            the index in the array to start at
+     * @param start
+     *            the index in the array where we want to start setting values to null at
+     */
+    private void trimEnd(String[] termsToOutput, int afterIndex, int start) {
+        boolean startNull = false;
+        for (int k = afterIndex; k < termsToOutput.length; k++) {
+            if (!startNull && k > start) {
+                startNull = true;
+            }
+            if (startNull) {
+                termsToOutput[k] = null;
+            } else {
+                if (termsToOutput[k] == null) {
+                    start++;
+                }
+            }
+        }
+    }
+
+    /**
+     * Looks for hit phrases (not separate hit terms) and puts the whole phrase in brackets
      *
      * @param terms
-     *            the terms to create a phrase
-     * @return the longest term (null if empty or null list)
+     *            the terms to create a phrase from
      */
-    protected String getLongestTerm(List<String> terms) {
-        if (terms == null || terms.isEmpty()) {
-            return null;
-        } else {
-            return terms.stream().max(Comparator.comparingInt(String::length)).get();
+    private void checkForHitPhrase(WordsAndScores[] terms) {
+        ArrayList<String> hitPhrases = new ArrayList<>();
+        // checks for phrases (anything in the hit list with a space in it) and adds them to a new arrayList
+        for (String s : hitTermsList) {
+            if (s.contains(" ")) {
+                hitPhrases.add(s);
+            }
         }
+        // if we don't find any, return unchanged
+        if (hitPhrases.isEmpty()) {
+            return;
+        }
+        // for each hit phrase found...
+        for (String hitPhrase : hitPhrases) {
+            // split the phrase on the spaces into the separate terms
+            String[] individualHitTerms = hitPhrase.split(" ");
+            // if the phrase is almost the same size as the whole excerpt, skip this iteration
+            if ((terms.length - 2) < individualHitTerms.length) {
+                continue;
+            }
+            // iterate across the WordsAndScores until the end of the hit phrase reaches the last offset
+            int iterations = terms.length - individualHitTerms.length + 1;
+            for (int j = 0; j < iterations; j++) {
+                // if we find the hit phrase...
+                if (isPhraseFound(individualHitTerms, terms, j)) {
+                    // set which position in the phrase each offset is
+                    int overridePosition;
+                    for (int k = 0; k < individualHitTerms.length; k++) {
+                        // beginning of phrase
+                        if (k == 0) {
+                            overridePosition = 1;
+                        } else if (k == individualHitTerms.length - 1) { // end of phrase
+                            overridePosition = 3;
+                        } else { // middle of phrase
+                            overridePosition = 2;
+                        }
+                        // set the override values for the current positions WordsAndScores to the index of the hit term in this position plus the override
+                        terms[j + k].setOverride(terms[j + k].getWordsList().indexOf(individualHitTerms[k]), overridePosition);
+                    }
+                }
+            }
+        }
+    }
+
+    private void overrideOutputLongest(WordsAndScores[] terms) {
+        for (WordsAndScores ws : terms) {
+            if (ws == null) {
+                continue;
+            }
+            if (ws.getUseScores()) {
+                return;
+            }
+        }
+        for (WordsAndScores ws : terms) {
+            if (ws == null) {
+                continue;
+            }
+            if (ws.getHasHitTerm()) {
+                int lwi = ws.getLongestWordIndex();
+                if (ws.getHitTermIndex() != lwi) {
+                    int ov = ws.getOverrideValue();
+                    if (ov >= 0) {
+                        ws.setOverride(lwi, ov);
+                    } else {
+                        ws.setOverride(lwi, 4);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Check to see if the whole hit phrase is found in the offsets starting at the passed in j value
+     *
+     * @param individualHitTerms
+     *            the array of the hit phrase split into individual terms
+     *
+     * @param terms
+     *            the terms to create a phrase from
+     *
+     * @param j
+     *            the current starting offset in the WordsAndScores array
+     * @return boolean isPhraseFound
+     */
+    private boolean isPhraseFound(String[] individualHitTerms, WordsAndScores[] terms, int j) {
+        ArrayList<String> tempWords;
+        // k represents what position we are in of the individual hit terms array
+        for (int k = 0; k < individualHitTerms.length; k++) {
+            // if a WordsAndScores is null, the phrase obviously wasn't found
+            if (terms[j + k] == null) {
+                return false;
+            }
+            // get the words list from the current WordsAndScores
+            tempWords = (ArrayList<String>) terms[j + k].getWordsList();
+            // if the current WordsAndScores doesn't have the term for this position, the phrase obviously wasn't found
+            if (!tempWords.contains(individualHitTerms[k])) {
+                return false;
+            }
+        }
+        // we found the whole phrase!!!
+        return true;
     }
 
     /**
@@ -397,10 +684,10 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
     private String[] getFieldAndValue(Key tfKey) {
         String cq = tfKey.getColumnQualifier().toString();
         int index = cq.lastIndexOf(Constants.NULL);
-        String fieldname = cq.substring(index + 1);
+        String fieldName = cq.substring(index + 1);
         int index2 = cq.lastIndexOf(Constants.NULL, index - 1);
-        String fieldvalue = cq.substring(index2 + 1, index);
-        return new String[] {fieldname, fieldvalue};
+        String fieldValue = cq.substring(index2 + 1, index);
+        return new String[] {fieldName, fieldValue};
     }
 
     /**
@@ -426,7 +713,7 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
      * @return the start or end document (cq) for our tf scan range. Null if dt,uid does not exist in the event key
      */
     private String getDtUidFromEventKey(Key eventKey, boolean startKey, boolean inclusive) {
-        // if an infinite end range, or unspecified end document, then no cdocument to specify
+        // if an infinite end range, or unspecified end document, then no document to specify
         if (eventKey == null || eventKey.getColumnFamily() == null || eventKey.getColumnFamily().getLength() == 0) {
             return null;
         }
@@ -471,17 +758,25 @@ public class TermFrequencyExcerptIterator implements SortedKeyValueIterator<Key,
         }
     }
 
+    public void setHitTermsList(List<String> hitTermsList) {
+        this.hitTermsList = (ArrayList<String>) hitTermsList;
+    }
+
+    public void setDirection(String direction) {
+        this.direction = direction;
+    }
+
+    public void setOrigHalfSize(float origHalfSize) {
+        this.origHalfSize = origHalfSize;
+    }
+
+    public void setTrim(boolean trim) {
+        this.trim = trim;
+    }
+
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("TermFrequencyExcerptIterator: ");
-        sb.append(this.fieldName);
-        sb.append(", ");
-        sb.append(this.startOffset);
-        sb.append(", ");
-        sb.append(this.endOffset);
-
-        return sb.toString();
+        return "TermFrequencyExcerptIterator: " + this.fieldName + ", " + this.startOffset + ", " + this.endOffset;
     }
 
 }

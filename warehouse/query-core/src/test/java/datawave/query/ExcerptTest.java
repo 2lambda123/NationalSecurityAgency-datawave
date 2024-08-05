@@ -1,5 +1,8 @@
 package datawave.query;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Collection;
@@ -26,13 +29,10 @@ import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.AfterClass;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-
-import com.google.common.collect.Sets;
 
 import datawave.configuration.spring.SpringBean;
 import datawave.core.query.configuration.GenericQueryConfiguration;
@@ -203,10 +203,10 @@ public abstract class ExcerptTest {
             }
         }
 
-        Assert.assertTrue("unexpected fields returned: " + unexpectedFields.toString(), unexpectedFields.isEmpty());
-        Assert.assertTrue(goodResults + " was not empty", goodResults.isEmpty());
+        assertTrue("unexpected fields returned: " + unexpectedFields, unexpectedFields.isEmpty());
+        assertTrue(goodResults + " was not empty", goodResults.isEmpty());
 
-        Assert.assertFalse("No docs were returned!", docs.isEmpty());
+        assertFalse("No docs were returned!", docs.isEmpty());
     }
 
     @Test
@@ -220,7 +220,7 @@ public abstract class ExcerptTest {
         String queryString = "QUOTE:(farther) #EXCERPT_FIELDS(QUOTE/2)";
 
         // not sure why the timestamp and delete flag are present
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:get much [farther] with a: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:get much [farther] with a: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -236,7 +236,7 @@ public abstract class ExcerptTest {
         String queryString = "QUOTE:(farther) #EXCERPT_FIELDS(QUOTE/2/before)";
 
         // not sure why the timestamp and delete flag are present
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:get much [farther]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:get much [farther]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -252,7 +252,7 @@ public abstract class ExcerptTest {
         String queryString = "QUOTE:(farther) #EXCERPT_FIELDS(QUOTE/2/after)";
 
         // not sure why the timestamp and delete flag are present
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:[farther] with a: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:[farther] with a: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -267,7 +267,7 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(he cant refuse) #EXCERPT_FIELDS(QUOTE/2/before)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:an offer [he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:an offer [he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -282,7 +282,7 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(he cant refuse) #EXCERPT_FIELDS(QUOTE/2/after)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:[he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:[he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -297,7 +297,7 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(he cant refuse) #EXCERPT_FIELDS(QUOTE/2)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:an offer [he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:an offer [he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -312,7 +312,8 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(he cant refuse) #EXCERPT_FIELDS(QUOTE/20)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:im gonna make him an offer [he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(
+                        Collections.singleton("HIT_EXCERPT:im gonna make him an offer [he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -327,7 +328,8 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(he cant refuse) #EXCERPT_FIELDS(QUOTE/20/before)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:im gonna make him an offer [he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(
+                        Collections.singleton("HIT_EXCERPT:im gonna make him an offer [he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -342,7 +344,7 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(he cant refuse) #EXCERPT_FIELDS(QUOTE/20/after)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:[he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Collections.singleton("HIT_EXCERPT:[he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -357,7 +359,8 @@ public abstract class ExcerptTest {
 
         String queryString = "QUOTE:(im gonna make him an offer he cant refuse) #EXCERPT_FIELDS(QUOTE/20)";
 
-        Set<String> goodResults = Sets.newHashSet("HIT_EXCERPT:[im] [gonna] [make] [him] [an] [offer] [he] [cant] [refuse]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(
+                        Collections.singleton("HIT_EXCERPT:[im] [gonna] [make] [him] [an] [offer] [he] [cant] [refuse]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -373,7 +376,7 @@ public abstract class ExcerptTest {
         // "if" is the first term for one event
         String queryString = "QUOTE:(if) #EXCERPT_FIELDS(QUOTE/3)";
 
-        Set<String> goodResults = Sets.newHashSet("UUID.0:SOPRANO", "HIT_EXCERPT:[if] you can quote: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Set.of("UUID.0:SOPRANO", "HIT_EXCERPT:[if] you can quote: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -389,7 +392,7 @@ public abstract class ExcerptTest {
         // "if" is the first term for one event
         String queryString = "QUOTE:(if) #EXCERPT_FIELDS(QUOTE/3/before)";
 
-        Set<String> goodResults = Sets.newHashSet("UUID.0:SOPRANO", "HIT_EXCERPT:[if]: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Set.of("UUID.0:SOPRANO", "HIT_EXCERPT:[if]: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
@@ -405,7 +408,7 @@ public abstract class ExcerptTest {
         // "if" is the first term for one event
         String queryString = "QUOTE:(if) #EXCERPT_FIELDS(QUOTE/3/after)";
 
-        Set<String> goodResults = Sets.newHashSet("UUID.0:SOPRANO", "HIT_EXCERPT:[if] you can quote: : [] 9223372036854775807 false");
+        Set<String> goodResults = new HashSet<>(Set.of("UUID.0:SOPRANO", "HIT_EXCERPT:[if] you can quote: : [] 9223372036854775807 false"));
 
         runTestQuery(queryString, format.parse("19000101"), format.parse("20240101"), extraParameters, goodResults);
     }
